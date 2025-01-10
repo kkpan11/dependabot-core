@@ -1,41 +1,36 @@
-using System;
-using System.IO;
-using System.Linq;
-using System.Threading.Tasks;
-
 namespace NuGetUpdater.Core;
 
 internal static class GlobalJsonUpdater
 {
     public static async Task UpdateDependencyAsync(
         string repoRootPath,
-        string globalJsonPath,
+        string workspacePath,
         string dependencyName,
         string previousDependencyVersion,
         string newDependencyVersion,
-        Logger logger)
+        ILogger logger)
     {
-        if (!File.Exists(globalJsonPath))
+        if (!MSBuildHelper.TryGetGlobalJsonPath(repoRootPath, workspacePath, out var globalJsonPath))
         {
-            logger.Log($"  No global.json file found at [{globalJsonPath}].");
+            logger.Info("  No global.json file found.");
             return;
         }
 
         var globalJsonFile = GlobalJsonBuildFile.Open(repoRootPath, globalJsonPath, logger);
 
-        logger.Log($"  Updating [{globalJsonFile.RepoRelativePath}] file.");
+        logger.Info($"  Updating [{globalJsonFile.RelativePath}] file.");
 
         var containsDependency = globalJsonFile.GetDependencies().Any(d => d.Name.Equals(dependencyName, StringComparison.OrdinalIgnoreCase));
         if (!containsDependency)
         {
-            logger.Log($"    Dependency [{dependencyName}] not found.");
+            logger.Info($"    Dependency [{dependencyName}] not found.");
             return;
         }
 
         if (globalJsonFile.MSBuildSdks?.TryGetPropertyValue(dependencyName, out var version) != true
             || version?.GetValue<string>() is not string versionString)
         {
-            logger.Log("    Unable to determine dependency version.");
+            logger.Info("    Unable to determine dependency version.");
             return;
         }
 
@@ -48,7 +43,7 @@ internal static class GlobalJsonUpdater
 
         if (await globalJsonFile.SaveAsync())
         {
-            logger.Log($"    Saved [{globalJsonFile.RepoRelativePath}].");
+            logger.Info($"    Saved [{globalJsonFile.RelativePath}].");
         }
     }
 }

@@ -3,6 +3,7 @@
 
 require "base64"
 require "dependabot/base_command"
+require "dependabot/errors"
 require "dependabot/opentelemetry"
 require "dependabot/updater"
 require "octokit"
@@ -48,6 +49,7 @@ module Dependabot
           return nil
         end
 
+        Dependabot.logger.info("Base commit SHA: #{@base_commit_sha}")
         File.write(Environment.output_path, JSON.dump(
                                               base64_dependency_files: base64_dependency_files.map(&:to_h),
                                               base_commit_sha: @base_commit_sha
@@ -97,15 +99,44 @@ module Dependabot
       @file_fetchers[directory] ||= create_file_fetcher(directory: directory)
     end
 
-    # Fetch dependency files for multiple directories
+    # rubocop:disable Metrics/PerceivedComplexity
     def dependency_files_for_multi_directories
-      @dependency_files_for_multi_directories ||= job.source.directories.flat_map do |dir|
+      return @dependency_files_for_multi_directories if defined?(@dependency_files_for_multi_directories)
+
+      has_glob = T.let(false, T::Boolean)
+      directories = Dir.chdir(job.repo_contents_path) do
+        job.source.directories.map do |dir|
+          next dir unless glob?(dir)
+
+          has_glob = true
+          dir = dir.delete_prefix("/")
+          Dir.glob(dir, File::FNM_DOTMATCH).select { |d| File.directory?(d) }.map { |d| "/#{d}" }
+        end.flatten
+      end.uniq
+
+      @dependency_files_for_multi_directories = directories.flat_map do |dir|
         ff = with_retries { file_fetcher_for_directory(dir) }
-        files = ff.files
+
+        begin
+          files = ff.files
+        rescue Dependabot::DependencyFileNotFound
+          # skip directories that don't contain manifests if globbing is used
+          next if has_glob
+
+          raise
+        end
+
         post_ecosystem_versions(ff) if should_record_ecosystem_versions?
         files
+      end.compact
+
+      if @dependency_files_for_multi_directories.empty?
+        raise Dependabot::DependencyFileNotFound, job.source.directories.join(", ")
       end
+
+      @dependency_files_for_multi_directories
     end
+    # rubocop:enable Metrics/PerceivedComplexity
 
     def dependency_files
       return @dependency_files if defined?(@dependency_files)
@@ -173,13 +204,14 @@ module Dependabot
         log_error(error)
 
         unknown_error_details = {
-          "error-class" => error.class.to_s,
-          "error-message" => error.message,
-          "error-backtrace" => error.backtrace.join("\n"),
-          "package-manager" => job.package_manager,
-          "job-id" => job.id,
-          "job-dependencies" => job.dependencies,
-          "job-dependency_group" => job.dependency_groups
+          ErrorAttributes::CLASS => error.class.to_s,
+          ErrorAttributes::MESSAGE => error.message,
+          ErrorAttributes::BACKTRACE => error.backtrace.join("\n"),
+          ErrorAttributes::FINGERPRINT => error.respond_to?(:sentry_context) ? error.sentry_context[:fingerprint] : nil,
+          ErrorAttributes::PACKAGE_MANAGER => job.package_manager,
+          ErrorAttributes::JOB_ID => job.id,
+          ErrorAttributes::DEPENDENCIES => job.dependencies,
+          ErrorAttributes::DEPENDENCY_GROUPS => job.dependency_groups
         }.compact
 
         error_details = {
@@ -192,6 +224,8 @@ module Dependabot
         error_type: error_details.fetch(:"error-type"),
         error_details: error_details[:"error-detail"]
       )
+
+      return unless error_details.fetch(:"error-type") == "file_fetcher_error"
 
       service.capture_exception(error: error, job: job)
     end
@@ -245,6 +279,11 @@ module Dependabot
           }
         }
       })
+    end
+
+    def glob?(directory)
+      # We could tighten this up, but it's probably close enough.
+      directory.include?("*") || directory.include?("?") || (directory.include?("[") && directory.include?("]"))
     end
   end
 end

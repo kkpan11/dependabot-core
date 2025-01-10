@@ -4,6 +4,7 @@
 require "base64"
 require "dependabot/base_command"
 require "dependabot/dependency_snapshot"
+require "dependabot/errors"
 require "dependabot/opentelemetry"
 require "dependabot/updater"
 
@@ -42,6 +43,9 @@ module Dependabot
           dependency_snapshot: dependency_snapshot
         ).run
 
+        # Wait for all PRs to be created
+        service.wait_for_calls_to_finish
+
         # Finally, mark the job as processed. The Dependabot::Updater may have
         # reported errors to the service, but we always consider the job as
         # successfully processed unless it actually raises.
@@ -63,7 +67,7 @@ module Dependabot
       Environment.job_definition["base_commit_sha"]
     end
 
-    # rubocop:disable Metrics/AbcSize
+    # rubocop:disable Metrics/AbcSize, Layout/LineLength, Metrics/MethodLength
     def handle_parser_error(error)
       # This happens if the repo gets removed after a job gets kicked off.
       # The service will handle the removal without any prompt from the updater,
@@ -76,19 +80,30 @@ module Dependabot
         # Check if the error is a known "run halting" state we should handle
         if (error_type = Updater::ErrorHandler::RUN_HALTING_ERRORS[error.class])
           { "error-type": error_type }
+        elsif error.is_a?(ToolVersionNotSupported)
+          Dependabot.logger.error(error.message)
+          {
+            "error-type": "tool_version_not_supported",
+            "error-detail": {
+              "tool-name": error.tool_name,
+              "detected-version": error.detected_version,
+              "supported-versions": error.supported_versions
+            }
+          }
         else
           # If it isn't, then log all the details and let the application error
           # tracker know about it
           Dependabot.logger.error error.message
           error.backtrace.each { |line| Dependabot.logger.error line }
           unknown_error_details = {
-            "error-class" => error.class.to_s,
-            "error-message" => error.message,
-            "error-backtrace" => error.backtrace.join("\n"),
-            "package-manager" => job.package_manager,
-            "job-id" => job.id,
-            "job-dependencies" => job.dependencies,
-            "job-dependency_group" => job.dependency_groups
+            ErrorAttributes::CLASS => error.class.to_s,
+            ErrorAttributes::MESSAGE => error.message,
+            ErrorAttributes::BACKTRACE => error.backtrace.join("\n"),
+            ErrorAttributes::FINGERPRINT => error.respond_to?(:sentry_context) ? error.sentry_context[:fingerprint] : nil,
+            ErrorAttributes::PACKAGE_MANAGER => job.package_manager,
+            ErrorAttributes::JOB_ID => job.id,
+            ErrorAttributes::DEPENDENCIES => job.dependencies,
+            ErrorAttributes::DEPENDENCY_GROUPS => job.dependency_groups
           }.compact
 
           service.capture_exception(error: error, job: job)
@@ -113,6 +128,6 @@ module Dependabot
         error_details: error_details[:"error-detail"]
       )
     end
-    # rubocop:enable Metrics/AbcSize
+    # rubocop:enable Metrics/AbcSize, Layout/LineLength, Metrics/MethodLength
   end
 end

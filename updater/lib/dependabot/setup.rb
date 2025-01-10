@@ -2,6 +2,7 @@
 # frozen_string_literal: true
 
 require "sentry-ruby"
+require "sorbet-runtime"
 
 require "dependabot/environment"
 require "dependabot/logger"
@@ -29,6 +30,7 @@ Sentry.init do |config|
     terraform|
     elm|
     docker|
+    dotnet_sdk|
     git_submodules|
     github_actions|
     composer|
@@ -59,6 +61,7 @@ require "dependabot/python"
 require "dependabot/terraform"
 require "dependabot/elm"
 require "dependabot/docker"
+require "dependabot/dotnet_sdk"
 require "dependabot/git_submodules"
 require "dependabot/github_actions"
 require "dependabot/composer"
