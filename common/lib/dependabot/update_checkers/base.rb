@@ -136,12 +136,12 @@ module Dependabot
 
       # Lowest available security fix version not checking resolvability
       # @return [Dependabot::<package manager>::Version, #to_s] version class
-      sig { overridable.returns(Dependabot::Version) }
+      sig { overridable.returns(T.nilable(Dependabot::Version)) }
       def lowest_security_fix_version
         raise NotImplementedError, "#{self.class} must implement #lowest_security_fix_version"
       end
 
-      sig { overridable.returns(String) }
+      sig { overridable.returns(T.nilable(Dependabot::Version)) }
       def lowest_resolvable_security_fix_version
         raise NotImplementedError, "#{self.class} must implement #lowest_resolvable_security_fix_version"
       end
@@ -224,7 +224,7 @@ module Dependabot
       sig { returns(Dependabot::Dependency) }
       def updated_dependency_without_unlock
         version = latest_resolvable_version_with_no_unlock.to_s
-        previous_version = latest_resolvable_previous_version(version)&.to_s
+        previous_version = latest_resolvable_previous_version(version)
 
         Dependency.new(
           name: dependency.name,
@@ -241,7 +241,7 @@ module Dependabot
       sig { returns(Dependabot::Dependency) }
       def updated_dependency_with_own_req_unlock
         version = preferred_resolvable_version.to_s
-        previous_version = latest_resolvable_previous_version(version)&.to_s
+        previous_version = latest_resolvable_previous_version(version)
 
         Dependency.new(
           name: dependency.name,
@@ -363,7 +363,7 @@ module Dependabot
       end
 
       # TODO: Should this return Dependabot::Version?
-      sig { returns(T.nilable(Gem::Version)) }
+      sig { returns(T.nilable(Dependabot::Version)) }
       def current_version
         @current_version ||=
           T.let(

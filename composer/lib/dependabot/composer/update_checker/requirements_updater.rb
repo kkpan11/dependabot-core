@@ -48,7 +48,7 @@ module Dependabot
         end
 
         def updated_requirements
-          return requirements if update_strategy == RequirementsUpdateStrategy::LockfileOnly
+          return requirements if update_strategy.lockfile_only?
           return requirements unless latest_resolvable_version
 
           requirements.map { |req| updated_requirement(req) }
@@ -56,8 +56,9 @@ module Dependabot
 
         private
 
-        attr_reader :requirements, :update_strategy,
-                    :latest_resolvable_version
+        attr_reader :requirements
+        attr_reader :update_strategy
+        attr_reader :latest_resolvable_version
 
         def check_update_strategy
           return if ALLOWED_UPDATE_STRATEGIES.include?(update_strategy)

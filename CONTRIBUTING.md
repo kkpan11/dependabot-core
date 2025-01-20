@@ -2,7 +2,7 @@
 
 👋 Want to give us feedback on Dependabot, or contribute to it? That's great - thank you so much!
 
-By submitting a contribution, you agree that contribution is licensed to GitHub under the [MIT-0 license](https://github.com/aws/mit-0).
+By submitting a contribution, you agree that contribution is licensed to GitHub under the [MIT license](LICENSE).
 
 #### Overview
 
@@ -17,7 +17,9 @@ By submitting a contribution, you agree that contribution is licensed to GitHub 
 2. Get the [development environment running](README.md#getting-a-development-environment-running).
 3. Make your feature addition or bug fix.
 4. Add [tests for it](README.md#running-tests). This is important so we don't break it in a future version unintentionally.
-5. Send a pull request. The tests will run on it automatically, so don't worry if you couldn't get them running locally.
+5. Ensure your code is well-documented and easy to understand.
+6. Send a pull request. The tests will run on it automatically, so don't worry if you couldn't get them running locally.
+7. If you are helping bump a version or add new ecosystem support to Dependabot, please file a corresponding PR for the change in the [GitHub docs repo](https://docs.github.com/en/contributing/collaborating-on-github-docs/about-contributing-to-github-docs). The list of supported package manager versions lives [here](https://github.com/github/docs/blob/main/data/reusables/dependabot/supported-package-managers.md). The rest of the Dependabot docs are primarily in [this directory](https://github.com/github/docs/tree/main/content/code-security/dependabot) and [this directory](https://github.com/github/docs/tree/main/data/reusables/dependabot).
 
 ## Project layout
 
@@ -34,7 +36,7 @@ struggling to understand how anything works please don't hesitate to create an i
 
 ## Contributing new ecosystems
 
-If you are an ecosystem maintainer and are interested in integrating with Dependabot, and are willing to help provide the expertise necessary to build and support it, please open an issue and let us know.
+If you are an ecosystem maintainer and are interested in integrating with Dependabot, and are willing to help provide the expertise necessary to build and support it, please open an issue and let us know so that we can discuss.
 
 ### What's next?
 
@@ -42,11 +44,8 @@ In `dependabot-core`, each ecosystem implementation is in its own gem so you can
 we have not merged by creating a [script](https://github.com/dependabot/dependabot-script) to run your own gem or
 fork of core, e.g. [dependabot-lein-runner](https://github.com/CGA1123/dependabot-lein-runner)
 
-Our plan in the year ahead is to invest more developer time directly in `dependabot-core` to improve our architecture so
-each ecosystem is more isolated and testable. We also want to make a consistency pass on existing ecosystems so that there
-is a clearer interface between core and the language-specific tooling.
-
-Our goal is make it easier to create and test Dependabot extensions so there is a paved path for running additional
+We are investing more developer time directly in `dependabot-core` to improve our architecture so that
+each ecosystem is more isolated and testable. Our goal is make it easier to create and test Dependabot extensions so there is a paved path for running additional
 ecosystems in the future.
 
 ## Stalebot

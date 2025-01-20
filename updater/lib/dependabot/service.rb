@@ -6,7 +6,9 @@ require "sorbet-runtime"
 require "terminal-table"
 
 require "dependabot/api_client"
+require "dependabot/errors"
 require "dependabot/opentelemetry"
+require "dependabot/experiments"
 
 # This class provides an output adapter for the Dependabot Service which manages
 # communication with the private API as well as consolidated error handling.
@@ -30,16 +32,31 @@ module Dependabot
       @client = client
       @pull_requests = T.let([], T::Array[T.untyped])
       @errors = T.let([], T::Array[T.untyped])
+      @threads = T.let([], T::Array[T.untyped])
     end
 
     def_delegators :client,
                    :mark_job_as_processed,
                    :record_ecosystem_versions,
-                   :increment_metric
+                   :increment_metric,
+                   :record_ecosystem_meta
+
+    sig { void }
+    def wait_for_calls_to_finish
+      return unless Experiments.enabled?("threaded_metadata")
+
+      @threads.each(&:join)
+    end
 
     sig { params(dependency_change: Dependabot::DependencyChange, base_commit_sha: String).void }
     def create_pull_request(dependency_change, base_commit_sha)
-      client.create_pull_request(dependency_change, base_commit_sha)
+      dependency_change.check_dependencies_have_previous_version if Experiments.enabled?("dependency_change_validation")
+
+      if Experiments.enabled?("threaded_metadata")
+        @threads << Thread.new { client.create_pull_request(dependency_change, base_commit_sha) }
+      else
+        client.create_pull_request(dependency_change, base_commit_sha)
+      end
       pull_requests << [dependency_change.humanized, :created]
     end
 
@@ -63,6 +80,21 @@ module Dependabot
     def record_update_job_error(error_type:, error_details:, dependency: nil)
       errors << [error_type.to_s, dependency]
       client.record_update_job_error(error_type: error_type, error_details: error_details)
+    end
+
+    sig do
+      params(
+        warn_type: T.any(String, Symbol),
+        warn_title: String,
+        warn_description: String
+      ).void
+    end
+    def record_update_job_warning(warn_type:, warn_title:, warn_description:)
+      client.record_update_job_warning(
+        warn_type: warn_type,
+        warn_title: warn_title,
+        warn_description: warn_description
+      )
     end
 
     sig { params(error_type: T.any(String, Symbol), error_details: T.nilable(T::Hash[T.untyped, T.untyped])).void }
@@ -105,13 +137,15 @@ module Dependabot
       return unless Experiments.enabled?(:record_update_job_unknown_error)
 
       error_details = {
-        "error-class" => error.class.to_s,
-        "error-message" => error.message,
-        "error-backtrace" => error.backtrace&.join("\n"),
-        "package-manager" => job&.package_manager,
-        "job-id" => job&.id,
-        "job-dependencies" => dependency&.name || job&.dependencies,
-        "job-dependency-group" => dependency_group&.name || job&.dependency_groups
+        ErrorAttributes::CLASS => error.class.to_s,
+        ErrorAttributes::MESSAGE => error.message,
+        ErrorAttributes::BACKTRACE => error.backtrace&.join("\n"),
+        ErrorAttributes::FINGERPRINT => error.respond_to?(:sentry_context) ? T.unsafe(error).sentry_context[:fingerprint] : nil, # rubocop:disable Layout/LineLength
+        ErrorAttributes::PACKAGE_MANAGER => job&.package_manager,
+        ErrorAttributes::JOB_ID => job&.id,
+        ErrorAttributes::DEPENDENCIES => dependency&.name || job&.dependencies,
+        ErrorAttributes::DEPENDENCY_GROUPS => dependency_group&.name || job&.dependency_groups,
+        ErrorAttributes::SECURITY_UPDATE => job&.security_updates_only?
       }.compact
       record_update_job_unknown_error(error_type: "unknown_error", error_details: error_details)
     end
